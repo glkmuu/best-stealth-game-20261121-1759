@@ -1,105 +1,37 @@
-// Ghostlight Heist — synthesized sound. No audio files: every sound is a
-// WebAudio oscillator/noise burst built at runtime.
-
-export class AudioEngine {
-  constructor() {
-    this.ctx = null;
-    this.muted = false;
-    this.master = null;
-  }
-
-  ensure() {
-    if (this.ctx) {
-      if (this.ctx.state === 'suspended') this.ctx.resume();
-      return;
-    }
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;
-    this.ctx = new AC();
-    this.master = this.ctx.createGain();
-    this.master.gain.value = 0.5;
-    this.master.connect(this.ctx.destination);
-  }
-
-  toggleMute() {
-    this.muted = !this.muted;
-    if (this.master) this.master.gain.value = this.muted ? 0 : 0.5;
-    return this.muted;
-  }
-
-  tone(freq, dur, type, vol, slideTo) {
-    if (!this.ctx || this.muted) return;
-    const t = this.ctx.currentTime;
-    const osc = this.ctx.createOscillator();
-    const g = this.ctx.createGain();
-    osc.type = type;
-    osc.frequency.setValueAtTime(freq, t);
-    if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
-    g.gain.setValueAtTime(vol, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    osc.connect(g);
-    g.connect(this.master);
-    osc.start(t);
-    osc.stop(t + dur + 0.02);
-  }
-
-  noiseBurst(dur, vol, filterFreq) {
-    if (!this.ctx || this.muted) return;
-    const t = this.ctx.currentTime;
-    const len = Math.max(1, Math.floor(this.ctx.sampleRate * dur));
-    const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len);
-    const src = this.ctx.createBufferSource();
-    src.buffer = buf;
-    const filter = this.ctx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = filterFreq;
-    const g = this.ctx.createGain();
-    g.gain.setValueAtTime(vol, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    src.connect(filter);
-    filter.connect(g);
-    g.connect(this.master);
-    src.start(t);
-  }
-
-  footstep(mode) {
-    if (mode === 'sneak') this.noiseBurst(0.05, 0.05, 500);
-    else if (mode === 'run') this.noiseBurst(0.09, 0.16, 900);
-    else this.noiseBurst(0.07, 0.09, 700);
-  }
-
-  pickup() {
-    this.tone(660, 0.12, 'sine', 0.22);
-    setTimeout(() => this.tone(990, 0.18, 'sine', 0.22), 90);
-  }
-
-  alert() {
-    this.tone(220, 0.35, 'sawtooth', 0.2, 440);
-    this.tone(110, 0.35, 'square', 0.1, 220);
-  }
-
-  cameraAlarm() {
-    this.tone(880, 0.15, 'square', 0.14);
-    setTimeout(() => this.tone(880, 0.15, 'square', 0.14), 180);
-  }
-
-  caught() {
-    this.tone(160, 0.5, 'sawtooth', 0.25, 60);
-    this.noiseBurst(0.3, 0.2, 400);
-  }
-
-  unlock() {
-    this.tone(523, 0.12, 'triangle', 0.2);
-    setTimeout(() => this.tone(784, 0.2, 'triangle', 0.2), 110);
-  }
-
-  levelComplete() {
-    [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => this.tone(f, 0.22, 'triangle', 0.2), i * 120));
-  }
-
-  click() {
-    this.tone(440, 0.06, 'sine', 0.12);
-  }
-}
+// audio.js — WebAudio synth sounds only, no audio files
+var GH = window.GH;
+GH._ac = null;
+GH.audioCtx = function () {
+  if (!GH._ac) { try { GH._ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { GH._ac = null; } }
+  if (GH._ac && GH._ac.state === 'suspended') GH._ac.resume();
+  return GH._ac;
+};
+GH.tone = function (freq, dur, type, vol, slide) {
+  if (GH.S && GH.S.muted) return;
+  var ac = GH.audioCtx(); if (!ac) return;
+  try {
+    var o = ac.createOscillator(), g = ac.createGain();
+    o.type = type || 'sine'; o.frequency.setValueAtTime(freq, ac.currentTime);
+    if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(20, slide), ac.currentTime + dur);
+    g.gain.setValueAtTime(vol || 0.12, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + dur);
+    o.connect(g); g.connect(ac.destination);
+    o.start(); o.stop(ac.currentTime + dur);
+  } catch (e) { /* audio is best-effort */ }
+};
+GH.audio = function (name) {
+  if (!GH.S || GH.S.muted) return;
+  try {
+    if (name === 'pickup') { GH.tone(880, 0.12, 'sine', 0.14); setTimeout(function () { GH.tone(1318, 0.18, 'sine', 0.12); }, 90); }
+    else if (name === 'coin') { GH.tone(1900, 0.08, 'triangle', 0.14, 900); setTimeout(function () { GH.tone(1500, 0.1, 'triangle', 0.1); }, 120); }
+    else if (name === 'alarm') { GH.tone(220, 0.5, 'sawtooth', 0.16, 440); GH.tone(110, 0.5, 'square', 0.08, 220); }
+    else if (name === 'laser') { GH.tone(1200, 0.25, 'square', 0.12, 300); }
+    else if (name === 'door') { GH.tone(520, 0.15, 'sine', 0.12, 780); }
+    else if (name === 'hack') { GH.tone(440, 0.1, 'square', 0.1); setTimeout(function () { GH.tone(660, 0.1, 'square', 0.1); }, 100); setTimeout(function () { GH.tone(880, 0.2, 'square', 0.1); }, 200); }
+    else if (name === 'step') { GH.tone(90, 0.05, 'sine', 0.05); }
+    else if (name === 'lost') { GH.tone(660, 0.2, 'sine', 0.1, 330); }
+    else if (name === 'caught') { GH.tone(330, 0.4, 'sawtooth', 0.16, 80); }
+    else if (name === 'win') { GH.tone(523, 0.15, 'sine', 0.13); setTimeout(function () { GH.tone(659, 0.15, 'sine', 0.13); }, 140); setTimeout(function () { GH.tone(784, 0.3, 'sine', 0.13); }, 280); }
+    else if (name === 'over') { GH.tone(392, 0.3, 'sawtooth', 0.12, 196); setTimeout(function () { GH.tone(196, 0.5, 'sawtooth', 0.12, 98); }, 300); }
+  } catch (e) { /* ignore */ }
+};

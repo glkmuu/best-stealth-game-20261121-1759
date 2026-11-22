@@ -1,45 +1,23 @@
-// Ghostlight Heist — tiny static server for game/ (Node standard library only).
-// Run: node serve.ts  — then open http://localhost:8080
-
+import { createReadStream, existsSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
-import { extname, join, normalize } from 'node:path';
+import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const here = fileURLToPath(new URL('.', import.meta.url));
-const root = join(here, 'game');
-const port = 8080;
-
-const types = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.mjs': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
+const root = join(fileURLToPath(new URL('.', import.meta.url)), 'game');
+const types: Record<string, string> = {
+  '.html': 'text/html',
+  '.css': 'text/css',
+  '.js': 'text/javascript',
+  '.mjs': 'text/javascript',
+  '.json': 'application/json',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
-  '.svg': 'image/svg+xml',
 };
-
-const server = createServer(async (req, res) => {
-  try {
-    const url = new URL(req.url ?? '/', `http://localhost:${port}`);
-    let path = url.pathname === '/' ? '/index.html' : url.pathname;
-    const file = join(root, normalize(path).replace(/^(\.\.[/\\])+/, ''));
-    if (!file.startsWith(root)) {
-      res.writeHead(403);
-      res.end('forbidden');
-      return;
-    }
-    const data = await readFile(file);
-    res.writeHead(200, { 'content-type': types[extname(file)] ?? 'application/octet-stream' });
-    res.end(data);
-  } catch {
-    res.writeHead(404);
-    res.end('not found');
-  }
+const server = createServer((req, res) => {
+  const path = join(root, decodeURIComponent(req.url?.split('?')[0] || '/index.html'));
+  const file = existsSync(path) && statSync(path).isDirectory() ? join(path, 'index.html') : path;
+  if (!existsSync(file)) { res.writeHead(404); res.end('not found'); return; }
+  res.writeHead(200, { 'content-type': types[extname(file)] || 'application/octet-stream' });
+  createReadStream(file).pipe(res);
 });
-
-server.listen(port, () => {
-  console.log(`Ghostlight Heist at http://localhost:${port}`);
-});
+server.listen(8080, () => console.log('Ghostlight Heist at http://localhost:8080'));

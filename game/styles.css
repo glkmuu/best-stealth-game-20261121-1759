@@ -1,160 +1,20 @@
-/* Ghostlight Heist — night-museum presentation. All art is drawn on canvas;
-   this sheet only styles the HUD and the screens. */
-
+/* Ghostlight Heist — styles.css */
 * { box-sizing: border-box; margin: 0; padding: 0; }
-
-html, body {
-  background: #07060d;
-  color: #e8e0c8;
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-  height: 100%;
-  overflow: hidden;
-}
-
-#stage {
-  position: relative;
-  width: 1280px;
-  height: 800px;
-  margin: 0 auto;
-  background: #0a0812;
-}
-
-#game-canvas {
-  display: block;
-  width: 1280px;
-  height: 800px;
-}
-
-.hidden { display: none !important; }
-
-/* ---- HUD ---- */
-#hud {
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 96px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 28px;
-  background: linear-gradient(180deg, rgba(5, 4, 12, 0.92), rgba(5, 4, 12, 0.55) 75%, rgba(5, 4, 12, 0));
-  pointer-events: none;
-  z-index: 5;
-}
-
-#hud button { pointer-events: auto; }
-
-.hud-left, .hud-mid, .hud-right { display: flex; align-items: center; gap: 14px; }
-.hud-left { width: 330px; flex-direction: column; align-items: flex-start; gap: 1px; }
-.hud-mid { flex: 1; justify-content: center; }
-.hud-right { width: 330px; justify-content: flex-end; }
-
-#hud-level { font-size: 19px; font-weight: 700; letter-spacing: 0.5px; color: #ffe9a8; white-space: nowrap; }
-#hud-sub { font-size: 12px; color: #9a90b8; white-space: nowrap; }
-#hud-mode { font-size: 12px; letter-spacing: 2px; color: #b8c8a0; }
-
-.hud-mid { flex-direction: column; gap: 6px; }
-.eye-box { display: flex; align-items: center; gap: 10px; }
-.eye { font-size: 26px; line-height: 1; }
-.eye-meter {
-  width: 220px; height: 14px;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 7px;
-  overflow: hidden;
-}
-#hud-eye-fill { height: 100%; width: 0%; background: #ffd75a; transition: width 0.12s linear; }
-#hud-eye-label { font-size: 13px; font-weight: 700; letter-spacing: 2px; min-width: 96px; }
-#hud-artifacts { font-size: 17px; font-weight: 700; color: #ffd75a; letter-spacing: 1px; }
-
-.hud-right { font-size: 15px; }
-#hud-timer { font-variant-numeric: tabular-nums; font-weight: 700; }
-#hud-score { font-weight: 700; color: #c9b8ff; }
-#hud-lives { color: #ff6a6a; font-size: 18px; letter-spacing: 2px; }
-.hud-buttons { display: flex; gap: 8px; }
-
-/* ---- buttons ---- */
-button {
-  background: #241d33;
-  color: #e8e0c8;
-  border: 1px solid #6b5a8a;
-  border-radius: 8px;
-  padding: 9px 16px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-}
-button:hover { background: #33284a; border-color: #c9b8ff; }
-button.primary {
-  background: #6b4fd8;
-  border-color: #a58cff;
-  color: #fff;
-  font-size: 17px;
-  padding: 13px 26px;
-}
-button.primary:hover { background: #7d63e0; }
-
-/* ---- banners / toasts ---- */
-#banner {
-  position: absolute;
-  top: 110px; left: 50%;
-  transform: translateX(-50%);
-  background: rgba(20, 12, 4, 0.92);
-  border: 1px solid #ffaa28;
-  color: #ffe9a8;
-  font-size: 17px; font-weight: 700;
-  padding: 10px 22px;
-  border-radius: 8px;
-  z-index: 6;
-  white-space: nowrap;
-}
-#toast {
-  position: absolute;
-  bottom: 24px; left: 50%;
-  transform: translateX(-50%);
-  background: rgba(10, 10, 22, 0.9);
-  border: 1px solid #6b5a8a;
-  color: #e8e0c8;
-  font-size: 15px;
-  padding: 9px 20px;
-  border-radius: 8px;
-  z-index: 6;
-  white-space: nowrap;
-}
-
-/* ---- screens ---- */
-.screen {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 18px;
-  background: rgba(5, 4, 12, 0.82);
-  z-index: 10;
-  text-align: center;
-  padding: 40px;
-}
-.screen h1 {
-  font-size: 52px;
-  letter-spacing: 6px;
-  color: #ffe9a8;
-  text-shadow: 0 0 26px rgba(255, 215, 90, 0.45);
-}
-.screen .tagline { font-size: 19px; color: #c9b8ff; font-style: italic; }
-.screen .brief { font-size: 16px; line-height: 1.6; max-width: 640px; color: #d8d0b8; }
-.screen .keys { font-size: 13px; color: #9a90b8; line-height: 1.7; }
-.menu-buttons { display: flex; gap: 14px; margin-top: 8px; }
-.stars { font-size: 44px; color: #ffd75a; letter-spacing: 8px; }
-#level-time-bonus, #level-ghost-bonus, #level-score, #game-total-score, #over-score {
-  font-size: 18px; color: #e8e0c8;
-}
-.how-list {
-  text-align: left;
-  font-size: 16px;
-  line-height: 1.9;
-  max-width: 680px;
-  list-style: none;
-}
-.how-list li::before { content: "◆ "; color: #ffd75a; }
-.how-list b { color: #ffe9a8; }
+body { background: #05070f; color: #e8ecf5; font-family: monospace, system-ui, sans-serif; display: flex; justify-content: center; padding: 12px; }
+#wrap { position: relative; width: 1200px; }
+#hud { display: flex; flex-wrap: wrap; gap: 6px 14px; background: #0c1226; border: 1px solid #2a3a5f; padding: 8px 12px; font-size: 13px; font-weight: bold; margin-bottom: 8px; border-radius: 6px; }
+#hud span { white-space: nowrap; }
+#hud-score { color: #ffd34d; margin-left: auto; }
+#hud-cam { color: #ff9d5c; }
+canvas { display: block; width: 1200px; height: 750px; background: #10182e; border: 2px solid #2a3a5f; border-radius: 6px; }
+.screen { position: absolute; left: 0; top: 44px; width: 1200px; height: 750px; background: rgba(5, 8, 18, 0.88); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 30px; border-radius: 6px; }
+.screen h1 { font-size: 44px; letter-spacing: 4px; color: #ffd34d; text-shadow: 0 0 24px rgba(255, 211, 77, 0.5); margin-bottom: 14px; }
+.screen .sub { font-size: 15px; color: #c8d4ea; max-width: 640px; margin-bottom: 12px; line-height: 1.5; }
+.screen .how { font-size: 13px; color: #9fb4d8; max-width: 680px; margin-bottom: 10px; line-height: 1.6; }
+.screen .foot { font-size: 12px; color: #6b7a99; margin-top: 16px; }
+.screen .stars { font-size: 34px; color: #ffd34d; margin-bottom: 10px; }
+.screen button { background: #ffd34d; color: #111; border: none; font: bold 16px monospace; padding: 12px 28px; border-radius: 6px; cursor: pointer; margin: 8px 4px; }
+.screen button:hover { background: #ffe98a; }
+.levels { margin-top: 10px; }
+.levels button { background: #1c2f4a; color: #c8d4ea; font-size: 13px; padding: 9px 14px; }
+.levels button:hover { background: #2c4a6b; color: #fff; }

@@ -1,87 +1,76 @@
-// Ghostlight Heist — the thief: movement, sneak, running and noise.
-// Sneak (Shift) is slow and quiet with a smaller detection profile; running
-// is fast but loud — guards and the dog hear the noise ring.
-
-import { PLAYER_SPEED } from './config.js';
-
-export class Player {
-  constructor(start) {
-    this.x = start.x;
-    this.y = start.y;
-    this.radius = 13;
-    this.mode = 'walk'; // walk | sneak | run
-    this.facing = -Math.PI / 2;
-    this.moving = false;
-    this.stepTimer = 0;
-    this.noise = 0; // current noise radius, 0 when quiet
-    this.noisePulse = 0; // 0..1 expanding ring animation
+// player.js — movement, sneak, noise, pickups, exit
+var GH = window.GH;
+GH.updatePlayer = function (dt) {
+  var S = GH.S, L = GH.L, p = GH.player, k = GH.keys;
+  var dx = 0, dy = 0;
+  if (k['arrowleft'] || k['a']) dx -= 1;
+  if (k['arrowright'] || k['d']) dx += 1;
+  if (k['arrowup'] || k['w']) dy -= 1;
+  if (k['arrowdown'] || k['s']) dy += 1;
+  p.moving = dx !== 0 || dy !== 0;
+  p.sneak = !!(k['shift']);
+  var speed = p.sneak ? 62 : 148; // sneak is slow and quiet; running is fast and loud
+  p.speed = p.moving ? speed : 0;
+  if (p.moving) {
+    var len = Math.sqrt(dx * dx + dy * dy); dx /= len; dy /= len;
+    p.dir = Math.atan2(dy, dx);
+    var nx = p.x + dx * speed * dt, ny = p.y + dy * speed * dt;
+    if (!GH.solidAt(nx, p.y, 11)) p.x = nx;
+    if (!GH.solidAt(p.x, ny, 11)) p.y = ny;
+    GH.footstep(dt, p);
   }
-
-  reset(start) {
-    this.x = start.x;
-    this.y = start.y;
-    this.mode = 'walk';
-    this.facing = -Math.PI / 2;
-    this.moving = false;
-    this.noise = 0;
+  // Keycard pickup
+  if (!L.keycardGot && GH.dist(p.x, p.y, L.keycard.x, L.keycard.y) < 26) {
+    L.keycardGot = true; S.keycard = true; GH.audio('pickup'); GH.say('KEYCARD acquired — locked doors open');
+    GH.burst(L.keycard.x, L.keycard.y, '#ffd34d');
   }
-
-  update(dt, input, world, audio) {
-    let ax = 0;
-    let ay = 0;
-    if (input.isDown('KeyW') || input.isDown('ArrowUp')) ay -= 1;
-    if (input.isDown('KeyS') || input.isDown('ArrowDown')) ay += 1;
-    if (input.isDown('KeyA') || input.isDown('ArrowLeft')) ax -= 1;
-    if (input.isDown('KeyD') || input.isDown('ArrowRight')) ax += 1;
-    this.moving = ax !== 0 || ay !== 0;
-
-    const sneak = input.isDown('ShiftLeft') || input.isDown('ShiftRight');
-    const sprint = input.isDown('Space');
-    // Walk is the quiet default. Shift sneaks (slow, quiet, hard to spot).
-    // Space runs (fast, loud — guards and the dog hear it).
-    // Standing still keeps the current stance, so a crouched thief stays crouched.
-    if (this.moving) {
-      this.mode = sneak ? 'sneak' : sprint ? 'run' : 'walk';
-    }
-
-    const speed = PLAYER_SPEED[this.mode];
-    if (this.moving) {
-      const len = Math.hypot(ax, ay);
-      const dx = (ax / len) * speed * dt;
-      const dy = (ay / len) * speed * dt;
-      this.facing = Math.atan2(dy, dx);
-      const p = world.moveCircle(this.x, this.y, dx, dy, this.radius);
-      this.x = p.x;
-      this.y = p.y;
-      // Footsteps: quiet ticks while sneaking, louder thuds while running.
-      this.stepTimer -= dt;
-      if (this.stepTimer <= 0) {
-        this.stepTimer = this.mode === 'run' ? 0.28 : this.mode === 'sneak' ? 0.5 : 0.38;
-        audio.footstep(this.mode);
-      }
-    }
-
-    // Noise: only running is heard. The ring expands and fades.
-    if (this.mode === 'run' && this.moving) {
-      this.noise = 130;
-      this.noisePulse = (this.noisePulse + dt * 1.6) % 1;
-    } else {
-      this.noise = Math.max(0, this.noise - 260 * dt);
+  // Artifact pickup (E or walk-over)
+  for (var i = 0; i < L.artifacts.length; i++) {
+    var a = L.artifacts[i];
+    if (!a.got && GH.dist(p.x, p.y, a.x, a.y) < 26) {
+      a.got = true; S.artifactsGot++; S.score += 300; GH.audio('pickup');
+      GH.say('Artifact secured! +' + 300 + '  (' + S.artifactsGot + '/' + L.artifacts.length + ')');
+      GH.burst(a.x, a.y, '#7fe7ff');
     }
   }
-
-  // Nearest artifact within pickup reach, or null.
-  nearArtifact(world) {
-    for (const a of world.artifacts) {
-      if (a.taken) continue;
-      const d = Math.hypot(a.x - this.x, a.y - this.y);
-      if (d < 42) return a;
-    }
-    return null;
+  // Keycard door opens on touch when the card is held
+  if (L.door && !L.door.open && S.keycard && GH.dist(p.x, p.y, L.door.x + L.door.w / 2, L.door.y + L.door.h / 2) < 70) {
+    L.door.open = true; GH.audio('door'); GH.say('Keycard door unlocked');
   }
-
-  nearExit(world) {
-    if (!world.exit) return false;
-    return Math.hypot(world.exit.x - this.x, world.exit.y - this.y) < 34;
-  }
-}
+  // Terminal hack channel (hold E near the terminal)
+  if (!L.terminalDone && GH.dist(p.x, p.y, L.terminal.x, L.terminal.y) < 42) {
+    if (k['e']) {
+      S.hack += dt;
+      if (S.hack >= 3) { L.terminalDone = true; S.camerasOffUntil = S.time + 20; GH.audio('hack'); GH.say('CAMERAS OFF for 20 seconds'); S.hack = 0; }
+    } else S.hack = Math.max(0, S.hack - dt * 2);
+  } else S.hack = 0;
+  // Exit — locked until every artifact is collected
+  var ex = L.exit, allGot = S.artifactsGot >= L.artifacts.length;
+  if (GH.dist(p.x, p.y, ex.x, ex.y) < 30 && allGot) GH.levelComplete();
+  else if (GH.dist(p.x, p.y, ex.x, ex.y) < 46 && !allGot && !S._exitWarned) { S._exitWarned = true; GH.say('Exit locked — collect all artifacts first'); }
+  if (GH.dist(p.x, p.y, ex.x, ex.y) > 60) S._exitWarned = false;
+};
+GH.levelComplete = function () {
+  var S = GH.S, L = GH.L;
+  var timeBonus = Math.max(0, Math.round(900 - S.levelTime * 6));
+  var ghost = S.alarms === 0 ? 500 : 0;
+  var noAlarm = S.alarms === 0 ? 300 : 0;
+  var gained = timeBonus + ghost + noAlarm;
+  S.score += gained;
+  S.stars = S.alarms === 0 ? 3 : (S.levelTime < GH.LEVELS[S.level].par ? 2 : 1);
+  S.lastBonus = { time: timeBonus, ghost: ghost, noAlarm: noAlarm, gained: gained };
+  S.totalScore = S.score;
+  GH.audio('win');
+  if (S.level >= 3) { S.screen = 'complete'; }
+  else S.screen = 'leveldone';
+  GH.uiShow();
+};
+GH.nextLevel = function () {
+  GH.loadLevel(GH.S.level + 1);
+  GH.uiShow();
+};
+GH.restartLevel = function () {
+  var keepScore = GH.S.score - (GH.S.score % 1);
+  GH.loadLevel(GH.S.level);
+  GH.S.score = keepScore; GH.uiShow();
+};

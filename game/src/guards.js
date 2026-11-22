@@ -1,242 +1,129 @@
-// Ghostlight Heist — guards, cameras and the guard dog.
-// Guard states: calm (patrol) -> suspicious (walk to last seen spot, look
-// around) -> alerted (chase the player, alarm). Detection is a meter that
-// fills only while the player is inside the vision cone AND in line of sight,
-// faster when the player is close, running, or standing in light.
-
-import { TILE, tileCenter } from './config.js';
-
-function angleDiff(a, b) {
-  let d = a - b;
-  while (d > Math.PI) d -= Math.PI * 2;
-  while (d < -Math.PI) d += Math.PI * 2;
-  return d;
-}
-
-function dist(ax, ay, bx, by) {
-  return Math.hypot(bx - ax, by - ay);
-}
-
-export class Guard {
-  constructor(spawn, waypoints, speed, range, fov) {
-    this.x = spawn.x;
-    this.y = spawn.y;
-    this.waypoints = waypoints.map(([tx, ty]) => tileCenter(tx, ty));
-    this.wpIndex = 0;
-    this.speed = speed;
-    this.range = range;
-    this.fov = fov;
-    this.facing = 0;
-    this.state = 'calm'; // calm | suspicious | alerted
-    this.meter = 0; // 0..1 detection for this guard
-    this.lastSeen = null;
-    this.suspicionTimer = 0;
-    this.lookTimer = 0;
-    this.pauseTimer = 0;
-    this.stuckTimer = 0;
-    this.lastX = this.x;
-    this.lastY = this.y;
-    this.walkPhase = Math.random() * 6;
+// guards.js — patrol AI, vision cones, detection, dogs, cameras
+var GH = window.GH;
+GH.guardSees = function (g, range, halfAngle) {
+  var p = GH.player, S = GH.S;
+  var d = GH.dist(g.x, g.y, p.x, p.y);
+  if (d > range) return 0;
+  var diff = Math.abs(GH.angleDiff(g.dir, GH.angleTo(g.x, g.y, p.x, p.y)));
+  if (diff > halfAngle) return 0;
+  if (!GH.losClear(g.x, g.y, p.x, p.y)) return 0;
+  return 1 - d / range * 0.5; // closer = stronger signal
+};
+GH.moveAlongPath = function (e, dt, speedMul) {
+  var t = e.path[e.wp], dx = t[0] - e.x, dy = t[1] - e.y, d = Math.sqrt(dx * dx + dy * dy);
+  if (d < 4) { e.wp = (e.wp + 1) % e.path.length; e.wait = e.pause || 1; return; }
+  var sp = (e.speed || 55) * (speedMul || 1);
+  e.x += dx / d * sp * dt; e.y += dy / d * sp * dt; e.dir = Math.atan2(dy, dx);
+};
+GH.updateGuard = function (g, dt) {
+  var S = GH.S, p = GH.player;
+  if (g.wait > 0) { g.wait -= dt; return; }
+  if (g.state === 'chase') {
+    var d = GH.dist(g.x, g.y, p.x, p.y);
+    var ang = GH.angleTo(g.x, g.y, p.x, p.y);
+    g.dir = ang;
+    g.x += Math.cos(ang) * g.speed * 1.7 * dt; g.y += Math.sin(ang) * g.speed * 1.7 * dt;
+    if (d < 16) { GH.caught(); return; }
+    if (!GH.guardSees(g, 220, 1.1)) { g.loseT += dt; if (g.loseT > 3) { g.state = 'patrol'; g.loseT = 0; GH.say('LOST YOU — the guard gives up'); GH.audio('lost'); } }
+    else g.loseT = 0;
+    return;
   }
-
-  // Can this guard see the player right now? Cone + distance + real LOS.
-  // A sneaking player has a smaller detection radius: guards spot them
-  // only when much closer.
-  canSee(player, world) {
-    const range = player.mode === 'sneak' ? this.range * 0.72 : this.range;
-    const d = dist(this.x, this.y, player.x, player.y);
-    if (d > range) return 0;
-    const angleTo = Math.atan2(player.y - this.y, player.x - this.x);
-    if (Math.abs(angleDiff(angleTo, this.facing)) > this.fov / 2) return 0;
-    if (!world.hasLineOfSight(this.x, this.y, player.x, player.y)) return 0;
-    // Closer = seen faster. Returns a 0..1 strength.
-    return 1.15 - (d / range) * 0.75;
+  if (g.state === 'investigate' && g.investigate) {
+    var tx = g.investigate.x, ty = g.investigate.y;
+    var dd = GH.dist(g.x, g.y, tx, ty);
+    if (dd < 8) { g.invT -= dt; if (g.invT <= 0) { g.state = 'patrol'; g.investigate = null; } return; }
+    var a2 = GH.angleTo(g.x, g.y, tx, ty); g.dir = a2;
+    g.x += Math.cos(a2) * g.speed * 1.3 * dt; g.y += Math.sin(a2) * g.speed * 1.3 * dt;
+    return;
   }
-
-  update(dt, player, world, events) {
-    const seen = this.canSee(player, world);
-    if (seen > 0) {
-      let rate = 0.55 * seen;
-      if (player.mode === 'run') rate *= 1.7;
-      else if (player.mode === 'sneak') rate *= 0.55;
-      if (world.inLight(player.x, player.y)) rate *= 1.45;
-      this.meter = Math.min(1, this.meter + rate * dt);
-      this.lastSeen = { x: player.x, y: player.y };
-    } else {
-      this.meter = Math.max(0, this.meter - 0.22 * dt);
-    }
-
-    if (this.meter >= 1 && this.state !== 'alerted') {
-      this.state = 'alerted';
-      events.alert(this);
-    } else if (this.meter >= 0.35 && this.state === 'calm') {
-      this.state = 'suspicious';
-      this.suspicionTimer = 0;
-    }
-
-    if (this.state === 'calm') this.patrol(dt, world);
-    else if (this.state === 'suspicious') this.investigate(dt, world);
-    else this.chase(dt, player, world, events);
-
-    // Stuck detection: if barely moving while trying, nudge the waypoint.
-    if (dist(this.x, this.y, this.lastX, this.lastY) < 1.5 && this.state !== 'calm') {
-      this.stuckTimer += dt;
-      if (this.stuckTimer > 1.2) {
-        this.stuckTimer = 0;
-        this.wpIndex = (this.wpIndex + 1) % this.waypoints.length;
-        if (this.state === 'suspicious') this.state = 'calm';
-      }
-    } else {
-      this.stuckTimer = 0;
-    }
-    this.lastX = this.x;
-    this.lastY = this.y;
+  if (g.state === 'suspicious' && g.lastSeen) {
+    var sx = g.lastSeen.x, sy = g.lastSeen.y, sd = GH.dist(g.x, g.y, sx, sy);
+    if (sd < 10) { g.wait = 1.2; g.state = 'patrol'; g.lastSeen = null; return; }
+    var a3 = GH.angleTo(g.x, g.y, sx, sy); g.dir = a3;
+    g.x += Math.cos(a3) * g.speed * 1.15 * dt; g.y += Math.sin(a3) * g.speed * 1.15 * dt;
+    return;
   }
-
-  moveToward(tx, ty, speed, dt, world) {
-    const d = dist(this.x, this.y, tx, ty);
-    if (d < 2) return true;
-    const nx = ((tx - this.x) / d) * speed * dt;
-    const ny = ((ty - this.y) / d) * speed * dt;
-    this.facing = Math.atan2(ty - this.y, tx - this.x);
-    const p = world.moveCircle(this.x, this.y, nx, ny, 14);
-    this.x = p.x;
-    this.y = p.y;
-    this.walkPhase += dt * 9;
-    return d < 6;
+  GH.moveAlongPath(g, dt, 1);
+};
+GH.updateDog = function (dg, dt) {
+  var p = GH.player, d = GH.dist(dg.x, dg.y, p.x, p.y);
+  if (dg.wait > 0) { dg.wait -= dt; return; }
+  if (dg.state === 'chase') {
+    var a = GH.angleTo(dg.x, dg.y, p.x, p.y); dg.dir = a;
+    dg.x += Math.cos(a) * dg.speed * 1.5 * dt; dg.y += Math.sin(a) * dg.speed * 1.5 * dt;
+    if (d < 16) { GH.caught(); return; }
+    if (d > 260) { dg.state = 'patrol'; }
+    return;
   }
-
-  patrol(dt, world) {
-    if (this.pauseTimer > 0) {
-      this.pauseTimer -= dt;
-      return;
-    }
-    const wp = this.waypoints[this.wpIndex];
-    if (this.moveToward(wp.x, wp.y, this.speed, dt, world)) {
-      this.wpIndex = (this.wpIndex + 1) % this.waypoints.length;
-      this.pauseTimer = 0.6; // brief look-around at each waypoint
+  // Dogs hear running: loud footsteps within 150px trigger a chase.
+  if (!p.sneak && p.moving && d < 150 && GH.losClear(dg.x, dg.y, p.x, p.y)) {
+    dg.state = 'chase'; dg.bang = 1; GH.alarm('The dog heard you!'); return;
+  }
+  if (GH.guardSees(dg, 150, 1.4) > 0.4) { dg.state = 'chase'; dg.bang = 1; GH.alarm('The dog spotted you!'); return; }
+  GH.moveAlongPath(dg, dt, 1);
+};
+GH.updateCameras = function (dt) {
+  var L = GH.L, S = GH.S, p = GH.player;
+  var off = S.time < S.camerasOffUntil;
+  for (var i = 0; i < L.cameras.length; i++) {
+    var c = L.cameras[i]; c.t += dt;
+    c.angle = c.base + Math.sin(c.t * 0.7) * c.sweep;
+    if (off) continue;
+    var d = GH.dist(c.x, c.y, p.x, p.y);
+    if (d < c.range && Math.abs(GH.angleDiff(c.angle, GH.angleTo(c.x, c.y, p.x, p.y))) < 0.45 && GH.losClear(c.x, c.y, p.x, p.y)) {
+      S.detection = Math.min(100, S.detection + 55 * dt);
+      if (!S.spotted) { S.spotted = true; }
     }
   }
-
-  investigate(dt, world) {
-    if (this.lastSeen) {
-      if (!this.moveToward(this.lastSeen.x, this.lastSeen.y, this.speed * 1.25, dt, world)) return;
-    }
-    // Arrived: scan the area, then give up and go back to patrol.
-    this.lookTimer += dt;
-    this.facing += Math.sin(this.lookTimer * 2.2) * dt * 1.6;
-    this.suspicionTimer += dt;
-    if (this.suspicionTimer > 3.2) {
-      this.state = 'calm';
-      this.meter = 0.2;
-      this.lookTimer = 0;
-      this.suspicionTimer = 0;
-    }
+};
+GH.updateDetection = function (dt) {
+  var S = GH.S, L = GH.L, p = GH.player;
+  if (GH.shotHold) return; // demo screenshots hold a fixed detection value
+  var seen = 0, seer = null;
+  var all = L.guards.concat(L.dogs);
+  for (var i = 0; i < all.length; i++) {
+    var g = all[i];
+    var s = GH.guardSees(g, 180, 0.85);
+    if (s > 0) { if (s > seen) { seen = s; seer = g; } }
   }
-
-  chase(dt, player, world, events) {
-    this.moveToward(player.x, player.y, this.speed * 1.65, dt, world);
-    if (dist(this.x, this.y, player.x, player.y) < 26) {
-      events.caught(this);
-    }
-    // Lost the player completely for a while: drop back to suspicious.
-    if (this.canSee(player, world) === 0) {
-      this.meter = Math.max(0, this.meter - 0.12 * dt);
-      if (this.meter < 0.55) {
-        this.state = 'suspicious';
-        this.lastSeen = { x: player.x, y: player.y };
-        this.suspicionTimer = 0;
-      }
-    }
+  if (seen > 0) {
+    var rate = 26 * seen;
+    if (GH.inLight(p.x, p.y)) rate *= 1.6;
+    else rate *= 0.55; // dark zones drain the meter — hiding works
+    if (p.sneak) rate *= 0.55;
+    S.detection = Math.min(100, S.detection + rate * dt);
+    if (seer) { seer.lastSeen = { x: p.x, y: p.y }; seer.bang = 1; if (S.detection > 40 && seer.state === 'patrol') seer.state = 'suspicious'; }
+    if (S.detection >= 100 && !S.alerted) GH.alarm('SPOTTED!');
+  } else {
+    S.detection = Math.max(0, S.detection - (GH.inLight(p.x, p.y) ? 10 : 26) * dt);
+    if (S.detection < 40) S.spotted = false;
   }
-}
-
-export class Camera {
-  constructor(spawn, def) {
-    this.x = spawn.x;
-    this.y = spawn.y;
-    this.baseAngle = def.baseAngle;
-    this.sweep = def.sweep;
-    this.speed = def.speed;
-    this.range = def.range;
-    this.fov = (52 * Math.PI) / 180;
-    this.phase = 0;
-    this.angle = def.baseAngle;
-    this.meter = 0;
-  }
-
-  update(dt, player, world, events) {
-    this.phase += dt * this.speed;
-    this.angle = this.baseAngle + Math.sin(this.phase) * this.sweep;
-    const range = player.mode === 'sneak' ? this.range * 0.72 : this.range;
-    const d = dist(this.x, this.y, player.x, player.y);
-    let seen = 0;
-    if (d < range) {
-      const angleTo = Math.atan2(player.y - this.y, player.x - this.x);
-      if (Math.abs(angleDiff(angleTo, this.angle)) < this.fov / 2 &&
-          world.hasLineOfSight(this.x, this.y, player.x, player.y)) {
-        seen = 1.2 - (d / range) * 0.7;
-      }
-    }
-    if (seen > 0) {
-      this.meter = Math.min(1, this.meter + 0.9 * seen * dt);
-      if (this.meter >= 1) events.cameraAlarm(this);
-    } else {
-      this.meter = Math.max(0, this.meter - 0.3 * dt);
-    }
-  }
-}
-
-export class Dog {
-  constructor(spawn, def) {
-    this.x = spawn.x;
-    this.y = spawn.y;
-    this.waypoints = def.waypoints.map(([tx, ty]) => tileCenter(tx, ty));
-    this.wpIndex = 0;
-    this.speed = def.speed;
-    this.hearRadius = def.hearRadius;
-    this.state = 'patrol'; // patrol | chase
-    this.facing = 0;
-    this.target = null;
-    this.walkPhase = 0;
-    this.loseTimer = 0;
-  }
-
-  update(dt, player, world, events) {
-    const d = dist(this.x, this.y, player.x, player.y);
-    // The dog hears running. Sneaking past it is safe.
-    if (player.mode === 'run' && d < this.hearRadius &&
-        world.hasLineOfSight(this.x, this.y, player.x, player.y)) {
-      this.state = 'chase';
-      this.target = { x: player.x, y: player.y };
-      this.loseTimer = 0;
-    }
-    if (this.state === 'chase') {
-      this.target = { x: player.x, y: player.y };
-      const arrived = this.moveToward(this.target.x, this.target.y, this.speed * 1.5, dt, world);
-      if (d < 24) events.caught(this);
-      if (d > this.hearRadius * 1.6) {
-        this.loseTimer += dt;
-        if (this.loseTimer > 2) this.state = 'patrol';
-      }
-    } else {
-      const wp = this.waypoints[this.wpIndex];
-      if (this.moveToward(wp.x, wp.y, this.speed, dt, world)) {
-        this.wpIndex = (this.wpIndex + 1) % this.waypoints.length;
-      }
-    }
-  }
-
-  moveToward(tx, ty, speed, dt, world) {
-    const d = dist(this.x, this.y, tx, ty);
-    if (d < 2) return true;
-    const nx = ((tx - this.x) / d) * speed * dt;
-    const ny = ((ty - this.y) / d) * speed * dt;
-    this.facing = Math.atan2(ty - this.y, tx - this.x);
-    const p = world.moveCircle(this.x, this.y, nx, ny, 12);
-    this.x = p.x;
-    this.y = p.y;
-    this.walkPhase += dt * 12;
-    return d < 6;
-  }
-}
+  if (S.detection >= 100) {
+    S.alerted = true;
+    for (var j = 0; j < L.guards.length; j++) if (L.guards[j].state !== 'chase') L.guards[j].state = 'chase';
+  } else if (S.detection < 55) S.alerted = false;
+};
+GH.alarm = function (msg) {
+  var S = GH.S;
+  if (!S.alerted) { S.alarms++; S.flash = 1; GH.audio('alarm'); }
+  S.alerted = true; S.detection = Math.max(S.detection, 100);
+  GH.say(msg || 'SPOTTED!');
+};
+GH.caught = function () {
+  var S = GH.S;
+  S.lives--; GH.audio('caught'); S.flash = 1;
+  if (S.lives <= 0) { S.screen = 'over'; GH.audio('over'); GH.uiShow(); return; }
+  GH.say('Caught! ' + S.lives + ' lives left');
+  GH.player.x = GH.LEVELS[S.level].start.x; GH.player.y = GH.LEVELS[S.level].start.y;
+  S.detection = 0; S.alerted = false;
+  var L = GH.L;
+  for (var i = 0; i < L.guards.length; i++) { L.guards[i].state = 'patrol'; L.guards[i].x = L.guards[i].path[0][0]; L.guards[i].y = L.guards[i].path[0][1]; L.guards[i].wp = 1; }
+  for (var j = 0; j < L.dogs.length; j++) { L.dogs[j].state = 'patrol'; L.dogs[j].x = L.dogs[j].path[0][0]; L.dogs[j].y = L.dogs[j].path[0][1]; L.dogs[j].wp = 1; }
+};
+GH.updateGuards = function (dt) {
+  var L = GH.L;
+  for (var i = 0; i < L.guards.length; i++) GH.updateGuard(L.guards[i], dt);
+  for (var j = 0; j < L.dogs.length; j++) GH.updateDog(L.dogs[j], dt);
+  GH.updateCameras(dt);
+  GH.updateDetection(dt);
+};

@@ -3,111 +3,79 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Ghostlight Heist — a stealth game</title>
-<link rel="stylesheet" href="./styles.css">
+<title>Ghostlight Heist — Stealth Game</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<div id="stage">
-  <canvas id="game-canvas"></canvas>
-
-  <div id="hud" class="hidden">
-    <div class="hud-left">
-      <div id="hud-level">The Archive</div>
-      <div id="hud-sub">Level 1 — learn the dark</div>
-      <div id="hud-mode">WALKING</div>
-    </div>
-    <div class="hud-mid">
-      <div class="eye-box">
-        <span class="eye">👁</span>
-        <div class="eye-meter"><div id="hud-eye-fill"></div></div>
-        <span id="hud-eye-label">UNSEEN</span>
-      </div>
-      <div id="hud-artifacts">◆ 0 / 2</div>
-    </div>
-    <div class="hud-right">
-      <div id="hud-timer">00:00</div>
-      <div id="hud-score">Score 0</div>
-      <div id="hud-lives">♥♥♥</div>
-      <div class="hud-buttons">
-        <button id="btn-hint" type="button">Hint (<span id="hud-hints">Hints 3</span>)</button>
-        <button id="btn-mute" type="button">Mute (M)</button>
-      </div>
-    </div>
+<div id="wrap">
+  <div id="hud">
+    <span id="hud-level">LV 1 · The Archive</span>
+    <span id="hud-art">◆ 0/2</span>
+    <span id="hud-key">🔒 NO CARD</span>
+    <span id="hud-coins">🪙 ×3 (Q)</span>
+    <span id="hud-time">⏱ 00:00</span>
+    <span id="hud-score">SCORE 0</span>
+    <span id="hud-lives">♥♥♥</span>
+    <span id="hud-cam">📷 CAMERAS LIVE</span>
+    <span id="hud-hint">H hint ×3</span>
   </div>
-
-  <div id="banner" class="hidden"></div>
-  <div id="toast" class="hidden"></div>
-
-  <div id="screen-title" class="screen">
+  <canvas id="game" width="960" height="600"></canvas>
+  <div id="title" class="screen">
     <h1>GHOSTLIGHT HEIST</h1>
-    <p class="tagline">A museum at night. Three vaults. One thief who was never there.</p>
-    <p class="brief">Sneak past the guards, steal every artifact, reach the exit unseen.
-      Vision cones are real — walls and crates block sight. Light pools and running
-      get you spotted faster. Get caught three times and the night is over.</p>
-    <div class="menu-buttons">
-      <button id="btn-start" type="button" class="primary">▶ Start the heist</button>
-      <button id="btn-how" type="button">How to play</button>
+    <p class="sub">A top-down stealth game — slip through the museum at night, steal the artifacts, reach the exit unseen.</p>
+    <p class="how">WASD / Arrows — move &nbsp;·&nbsp; Shift — sneak (slow, quiet) &nbsp;·&nbsp; Q — throw a coin &nbsp;·&nbsp; E — hack terminal (hold) &nbsp;·&nbsp; H — hint &nbsp;·&nbsp; R — restart &nbsp;·&nbsp; M — mute &nbsp;·&nbsp; P — pause</p>
+    <p class="how">Hide in the dark. Dodge vision cones, cameras and laser grids. Grab the keycard to open locked doors. Dogs hear running feet — sneak past them.</p>
+    <button id="btn-start">▶ START HEIST</button>
+    <div class="levels">
+      <button class="lvl-btn" data-level="0">1 · The Archive</button>
+      <button class="lvl-btn" data-level="1">2 · The Gallery</button>
+      <button class="lvl-btn" data-level="2">3 · The Vault</button>
+      <button class="lvl-btn" data-level="3">4 · The Rooftop</button>
     </div>
-    <p class="keys">WASD / arrows — move &nbsp;·&nbsp; Shift — sneak &nbsp;·&nbsp; Space — run (loud!)
-      &nbsp;·&nbsp; E — steal &nbsp;·&nbsp; H — hint &nbsp;·&nbsp; R — restart level &nbsp;·&nbsp; P — pause &nbsp;·&nbsp; M — mute</p>
+    <p class="foot">4 levels · coins · lasers · keycards · terminals · dogs · lighting · minimap — original game, procedural art, synth sound only.</p>
   </div>
-
-  <div id="screen-how" class="screen hidden">
-    <h1>HOW TO PLAY</h1>
-    <ul class="how-list">
-      <li><b>Move</b> with WASD or the arrow keys.</li>
-      <li><b>Shift — sneak.</b> Slow and quiet, and guards spot you much slower.</li>
-      <li><b>Space — run.</b> Fast, but loud: the noise ring draws guards, and the dog hears it.</li>
-      <li><b>E — steal</b> an artifact when you stand next to it. Steal them all to unlock the exit.</li>
-      <li><b>Vision cones</b> are yellow. Stay out of them, or break line of sight behind crates, shelves and pillars.</li>
-      <li><b>Light pools</b> raise detection. Cameras sweep their own cones — one full sweep and the alarm sounds.</li>
-      <li><b>Detection:</b> the eye fills as a guard sees you. At half, guards come to look. At full, they chase.</li>
-      <li><b>H — hint</b> points an arrow at the exit (3 per level). <b>R</b> restarts the level. <b>P</b> pauses.</li>
-      <li>Finish a level fast and never detected for the <b>ghost bonus</b> and 3 stars.</li>
-    </ul>
-    <div class="menu-buttons">
-      <button id="btn-how-back" type="button" class="primary">Back</button>
-    </div>
+  <div id="leveldone" class="screen" style="display:none">
+    <h1 id="done-title">LEVEL CLEARED!</h1>
+    <p id="done-stars" class="stars">★★★</p>
+    <p id="done-bonus" class="sub"></p>
+    <p id="done-score" class="sub"></p>
+    <button id="btn-next">▶ NEXT LEVEL</button>
   </div>
-
-  <div id="screen-level" class="screen hidden">
-    <h1 id="level-title">Level cleared!</h1>
-    <div id="level-stars" class="stars">★★★</div>
-    <p id="level-time-bonus">Time bonus: +0</p>
-    <p id="level-ghost-bonus">Ghost bonus: —</p>
-    <p id="level-score">Level score: 0</p>
-    <div class="menu-buttons">
-      <button id="btn-next" type="button" class="primary">Next level ▶</button>
-      <button id="btn-replay-level" type="button">Replay level</button>
-    </div>
+  <div id="complete" class="screen" style="display:none">
+    <h1>THE HEIST IS COMPLETE!</h1>
+    <p class="stars" id="comp-stars">★★★</p>
+    <p class="sub">You escaped by helicopter. Every artifact, every level — ghost-clean.</p>
+    <p id="comp-score" class="sub"></p>
+    <button id="btn-again">↻ PLAY AGAIN</button>
   </div>
-
-  <div id="screen-game" class="screen hidden">
-    <h1>THE VAULT IS EMPTY</h1>
-    <p class="tagline">Every artifact, every level — and nobody ever saw you.</p>
-    <p id="game-total-score">Total score: 0</p>
-    <div class="menu-buttons">
-      <button id="btn-again" type="button" class="primary">Play again</button>
-    </div>
+  <div id="over" class="screen" style="display:none">
+    <h1>CAUGHT!</h1>
+    <p class="sub">The guards hauled you out. The museum keeps its ghosts… for now.</p>
+    <p id="over-score" class="sub"></p>
+    <button id="btn-retry">↻ TRY AGAIN</button>
   </div>
-
-  <div id="screen-over" class="screen hidden">
-    <h1>CAUGHT IN THE DARK</h1>
-    <p class="tagline">The museum keeps its secrets tonight.</p>
-    <p id="over-score">Score: 0</p>
-    <div class="menu-buttons">
-      <button id="btn-retry" type="button" class="primary">Try again</button>
-      <button id="btn-quit" type="button">Title screen</button>
-    </div>
-  </div>
-
-  <div id="screen-pause" class="screen hidden">
+  <div id="paused" class="screen" style="display:none">
     <h1>PAUSED</h1>
-    <div class="menu-buttons">
-      <button id="btn-resume" type="button" class="primary">Resume</button>
-    </div>
+    <p class="sub">Press P to resume.</p>
   </div>
 </div>
-<script type="module" src="./src/main.js"></script>
+<script src="src/config.js"></script>
+<script src="src/world.js"></script>
+<script src="src/audio.js"></script>
+<script src="src/distraction.js"></script>
+<script src="src/lasers.js"></script>
+<script src="src/keycards.js"></script>
+<script src="src/terminal.js"></script>
+<script src="src/footsteps.js"></script>
+<script src="src/lighting.js"></script>
+<script src="src/minimap.js"></script>
+<script src="src/guards.js"></script>
+<script src="src/player.js"></script>
+<script src="src/render.js"></script>
+<script src="src/input.js"></script>
+<script src="src/ui.js"></script>
+<script src="src/shots.js"></script>
+<script src="src/main.js"></script>
 </body>
 </html>
